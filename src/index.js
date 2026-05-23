@@ -28,7 +28,8 @@ app.use(
             "http://127.0.0.1:3000",
             "https://back-nwex.onrender.com",
             "https://afront.onrender.com",
-            "https://afrontself.vercel.app"
+            "https://afrontself.vercel.app",
+            "https://afrontselfbuty.vercel.app"
         ],
         credentials: true,
     })
