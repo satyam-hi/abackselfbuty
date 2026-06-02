@@ -108,8 +108,7 @@ export const getAllProvider = async (req, res) => {
         const totalProviders = await Sprovider.countDocuments(filter);
 
         // FETCH DATA
-        const providers = await Sprovider.find(filter)
-            .skip(skip)
+        const providers = await Sprovider.find(filter).select("-password -accesstoken -sessionAccesstoken -emailVerifyAccesstoken").skip(skip)
             .limit(pageLimit)
             .sort({ createdAt: -1 });
 
@@ -172,6 +171,9 @@ export const registerProvider = async (req, res) => {
             100000 + Math.random() * 900000
         )}`;
         const emailVerify = false;
+        const trialStart = new Date();
+        const trialEnd = new Date(trialStart);
+        trialEnd.setDate(trialEnd.getDate() + 7);
 
         const newProvider = await Sprovider.create({
             sprovid,
@@ -186,6 +188,16 @@ export const registerProvider = async (req, res) => {
             emailVerify,
             status,
             additionalDetails,
+            subscription: {
+                active: true,
+                plan: "trial",
+                amount: 0,
+                currency: "USD",
+                startDate: trialStart,
+                lastPaidDate: null,
+                nextBillingDate: trialEnd,
+                status: "trial",
+            },
             // ✅ NEW
             cityId: cityId || null,
             localAreaId: localAreaId || null,
@@ -436,7 +448,7 @@ export const getProviderById = async (req, res) => {
             });
         }
 
-        const provider = await Sprovider.findOne({ sprovid });
+        const provider = await Sprovider.findOne({ sprovid }).select("-password -accesstoken -sessionAccesstoken -emailVerifyAccesstoken");
 
         if (!provider) {
             return res.status(404).json({
@@ -599,7 +611,206 @@ export const providerPaymentDue = async (req, res) => {
     }
 };
 
+const getNextMonthlyBillingDate = (date = new Date()) => {
+    const next = new Date(date);
+    next.setMonth(next.getMonth() + 1);
+    return next;
+};
 
+/**
+ * @desc    Subscribe provider to monthly plan
+ * @route   PUT /api/provider/subscribe/:sprovid
+ * @access  Admin/Private
+ */
+export const subscribeProvider = async (req, res) => {
+    try {
+        const { sprovid } = req.params;
+        const { plan = "monthly", amount, currency = "INR" } = req.body;
+
+        if (!sprovid || !amount) {
+            return res.status(400).json({
+                success: false,
+                message: "sprovid and amount are required to create a subscription",
+            });
+        }
+
+        const provider = await Sprovider.findOne({ sprovid });
+
+        if (!provider) {
+            return res.status(404).json({
+                success: false,
+                message: "Provider not found",
+            });
+        }
+
+        const now = new Date();
+        provider.subscription = {
+            active: true,
+            plan,
+            amount: Number(amount),
+            currency,
+            startDate: now,
+            lastPaidDate: now,
+            nextBillingDate: getNextMonthlyBillingDate(now),
+            status: "active",
+        };
+
+        provider.payment_due = false;
+        provider.amount_due = "0.00";
+        await provider.save();
+
+        return res.status(200).json({
+            success: true,
+            message: "Provider subscribed successfully",
+            provider,
+        });
+    } catch (error) {
+        console.error("Subscribe provider error:", error);
+        return res.status(500).json({
+            success: false,
+            message: "Internal Server Error",
+            error: error.message,
+        });
+    }
+};
+
+/**
+ * @desc    Renew provider subscription for the next month
+ * @route   PUT /api/provider/renew-subscription/:sprovid
+ * @access  Admin/Private
+ */
+export const renewProviderSubscription = async (req, res) => {
+    try {
+        const { sprovid } = req.params;
+
+        if (!sprovid) {
+            return res.status(400).json({
+                success: false,
+                message: "sprovid is required",
+            });
+        }
+
+        const provider = await Sprovider.findOne({ sprovid });
+
+        if (!provider || !provider.subscription?.active) {
+            return res.status(404).json({
+                success: false,
+                message: "Active subscription not found for this provider",
+            });
+        }
+
+        const now = new Date();
+        provider.subscription.lastPaidDate = now;
+        provider.subscription.nextBillingDate = getNextMonthlyBillingDate(now);
+        provider.subscription.status = "active";
+
+        provider.payment_due = false;
+        provider.amount_due = "0.00";
+
+        await provider.save();
+
+        return res.status(200).json({
+            success: true,
+            message: "Provider subscription renewed successfully",
+            provider,
+        });
+    } catch (error) {
+        console.error("Renew subscription error:", error);
+        return res.status(500).json({
+            success: false,
+            message: "Internal Server Error",
+            error: error.message,
+        });
+    }
+};
+
+/**
+ * @desc    Cancel provider subscription
+ * @route   PUT /api/provider/cancel-subscription/:sprovid
+ * @access  Admin/Private
+ */
+export const cancelProviderSubscription = async (req, res) => {
+    try {
+        const { sprovid } = req.params;
+
+        if (!sprovid) {
+            return res.status(400).json({
+                success: false,
+                message: "sprovid is required",
+            });
+        }
+
+        const provider = await Sprovider.findOne({ sprovid });
+
+        if (!provider) {
+            return res.status(404).json({
+                success: false,
+                message: "Provider not found",
+            });
+        }
+
+        provider.subscription.active = false;
+        provider.subscription.status = "cancelled";
+        provider.subscription.nextBillingDate = null;
+
+        await provider.save();
+
+        return res.status(200).json({
+            success: true,
+            message: "Provider subscription cancelled successfully",
+            provider,
+        });
+    } catch (error) {
+        console.error("Cancel subscription error:", error);
+        return res.status(500).json({
+            success: false,
+            message: "Internal Server Error",
+            error: error.message,
+        });
+    }
+};
+
+/**
+ * @desc    Get provider subscription details
+ * @route   GET /api/provider/subscription/:sprovid
+ * @access  Public/Admin
+ */
+export const getProviderSubscription = async (req, res) => {
+    try {
+        const { sprovid } = req.params;
+
+        if (!sprovid) {
+            return res.status(400).json({
+                success: false,
+                message: "sprovid is required",
+            });
+        }
+
+        const provider = await Sprovider.findOne({ sprovid }).select("subscription payment_due amount_due sprovid name email status");
+
+        if (!provider) {
+            return res.status(404).json({
+                success: false,
+                message: "Provider not found",
+            });
+        }
+
+        return res.status(200).json({
+            success: true,
+            message: "Provider subscription fetched successfully",
+            subscription: provider.subscription,
+            payment_due: provider.payment_due,
+            amount_due: provider.amount_due,
+        });
+    } catch (error) {
+        console.error("Get provider subscription error:", error);
+        return res.status(500).json({
+            success: false,
+            message: "Internal Server Error",
+            error: error.message,
+        });
+    }
+};
 
 /**
  * @desc    Update provider profile (except email)

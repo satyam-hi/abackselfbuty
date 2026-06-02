@@ -17,13 +17,17 @@ import {
     getAllProvider,
     registerProvider,
     verifyProviderEmail,
-    providerForgotPassword, 
+    providerForgotPassword,
     loginProvider,
     logoutProvider,
     getProviderById,
     verifyProviderToken,
     providerPaymentComplete,
     providerPaymentDue,
+    subscribeProvider,
+    renewProviderSubscription,
+    cancelProviderSubscription,
+    getProviderSubscription,
     updateProviderProfile
 
 } from "../controllers/providerController.js";
@@ -44,5 +48,10 @@ providerRouter.post("/verify-token", verifyProviderToken);
 providerRouter.put("/update-profile/:sprovid", updateProviderProfile);
 providerRouter.put("/payment-due/:sprovid", providerPaymentDue);
 providerRouter.put("/payment-complete/:sprovid", providerPaymentComplete);
+providerRouter.put("/subscribe/:sprovid", subscribeProvider);
+providerRouter.put("/renew-subscription/:sprovid", renewProviderSubscription);
+providerRouter.put("/cancel-subscription/:sprovid", cancelProviderSubscription);
+providerRouter.get("/subscription/:sprovid", getProviderSubscription);
 
 export default providerRouter;
+ 
